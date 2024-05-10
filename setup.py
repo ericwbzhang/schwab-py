@@ -28,17 +28,17 @@ setuptools.setup(
         'Operating System :: OS Independent',
         'Topic :: Office/Business :: Financial :: Investment',
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     install_requires=[
         'authlib',
         'httpx',
         'prompt_toolkit',
         'python-dateutil',
         'selenium',
+        'websockets'
     ],
     extras_require={
         'dev': [
-            'asynctest',
             'colorama',
             'coverage',
             'nose',

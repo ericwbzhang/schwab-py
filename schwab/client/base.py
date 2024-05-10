@@ -86,7 +86,7 @@ class BaseClient(EnumEnforcer):
         '''Formats datetime or date objects as yyyy-MM-dd'T'HH:mm:ss.SSSZ'''
         self._assert_type(var_name, dt, [self._DATE, self._DATETIME])
 
-        if isinstance(dt, self._DATE):
+        if not isinstance(dt, self._DATETIME):
             dt = datetime.datetime(year=dt.year, month=dt.month, day=dt.day)
 
         return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -171,15 +171,15 @@ class BaseClient(EnumEnforcer):
     ##########################################################################
     # Orders
 
-    def cancel_order(self, order_id, account_hash):
-        '''Cancel a specific order for a specific account'''
-        path = '/trader/v1/accounts/{}/orders/{}'.format(account_hash, order_id)
-        return self._delete_request(path)
-
     def get_order(self, order_id, account_hash):
         '''Get a specific order for a specific account by its order ID'''
         path = '/trader/v1/accounts/{}/orders/{}'.format(account_hash, order_id)
         return self._get_request(path, {})
+
+    def cancel_order(self, order_id, account_hash):
+        '''Cancel a specific order for a specific account'''
+        path = '/trader/v1/accounts/{}/orders/{}'.format(account_hash, order_id)
+        return self._delete_request(path)
 
     class Order:
         class Status(Enum):
@@ -211,15 +211,15 @@ class BaseClient(EnumEnforcer):
 
         if from_entered_datetime is None:
             from_entered_datetime = (
-                    datetime.datetime.utcnow() -
+                    datetime.datetime.now(datetime.timezone.utc) -
                     datetime.timedelta(days=60))
         if to_entered_datetime is None:
-            to_entered_datetime = datetime.datetime.utcnow()
+            to_entered_datetime = datetime.datetime.now(datetime.timezone.utc)
 
         params = {
             'fromEnteredTime': self._format_date_as_iso(
                 'from_entered_datetime', from_entered_datetime),
-            'toEnteredTime': self._format_datetime(
+            'toEnteredTime': self._format_date_as_iso(
                 'to_entered_datetime', to_entered_datetime),
         }
 
@@ -266,8 +266,7 @@ class BaseClient(EnumEnforcer):
                                            max_results=None,
                                            from_entered_datetime=None,
                                            to_entered_datetime=None,
-                                           status=None,
-                                           statuses=None):
+                                           status=None):
         '''Orders for all linked accounts. Optionally specify a single status on 
         which to filter.
 
@@ -381,14 +380,15 @@ class BaseClient(EnumEnforcer):
         if start_date is None:
             start_date = self._format_date_as_iso(
                     'start_date',
-                    datetime.datetime.now() - datetime.timedelta(days=60))
+                    datetime.datetime.now(datetime.timezone.utc)
+                    - datetime.timedelta(days=60))
         else:
             start_date = self._format_date_as_iso('start_date', start_date)
 
         # End date
         if end_date is None:
             end_date = self._format_date_as_iso(
-                    'end_date', datetime.datetime.now())
+                    'end_date', datetime.datetime.now(datetime.timezone.utc))
         else:
             end_date = self._format_date_as_iso('end_date', end_date)
 
@@ -420,17 +420,17 @@ class BaseClient(EnumEnforcer):
     ##########################################################################
     # User Info and Preferences
 
-    def get_user_preferences(self, account_id):
+    def get_user_preferences(self):
         '''Preferences for the logged in account, including all linked
         accounts.'''
         path = '/trader/v1/userPreference'
-        return self._get_request(path, ())
+        return self._get_request(path, {})
 
 
     ##########################################################################
     # Quotes
 
-    class GetQuote:
+    class Quote:
         class Fields(Enum):
             QUOTE = 'quote'
             FUNDAMENTAL = 'fundamental'
@@ -446,9 +446,9 @@ class BaseClient(EnumEnforcer):
         :param fields: Fields to request. If unset, return all available data. 
                        i.e. all fields. See :class:`GetQuote.Field` for options.
         '''
-        fields = self.convert_enum_iterable(fields, self.GetQuote.Fields)
+        fields = self.convert_enum_iterable(fields, self.Quote.Fields)
         if fields:
-            params = {'fields': fields}
+            params = {'fields': ','.join(fields)}
         else:
             params = {}
 
@@ -470,9 +470,9 @@ class BaseClient(EnumEnforcer):
             'symbols': ','.join(symbols)
         }
 
-        fields = self.convert_enum_iterable(fields, self.GetQuote.Fields)
+        fields = self.convert_enum_iterable(fields, self.Quote.Fields)
         if fields:
-            params['fields'] = fields
+            params['fields'] = ','.join(fields)
 
         if indicative is not None:
             if type(indicative) is not bool:
@@ -603,9 +603,9 @@ class BaseClient(EnumEnforcer):
             strike_range, self.Options.StrikeRange)
         option_type = self.convert_enum(option_type, self.Options.Type)
         exp_month = self.convert_enum(exp_month, self.Options.ExpirationMonth)
+        entitlement = self.convert_enum(entitlement, self.Options.Entitlement)
 
         params = {
-            'apikey': self.api_key,
             'symbol': symbol,
         }
 
@@ -639,6 +639,8 @@ class BaseClient(EnumEnforcer):
             params['expMonth'] = exp_month
         if option_type is not None:
             params['optionType'] = option_type
+        if entitlement is not None:
+            params['entitlement'] = entitlement
 
         path = '/marketdata/v1/chains'
         return self._get_request(path, params)
@@ -1009,7 +1011,7 @@ class BaseClient(EnumEnforcer):
         if sort_order is not None:
             params['sort'] = sort_order
         if frequency is not None:
-            params['frequency'] = frequency
+            params['frequency'] = str(frequency)
 
         return self._get_request(path, params)
 
@@ -1113,5 +1115,8 @@ class BaseClient(EnumEnforcer):
         :param cusip: String representing CUSIP of instrument for which to fetch 
                       data. Note leading zeroes must be preserved.
         '''
+        if not isinstance(cusip, str):
+            raise ValueError('cusip must be passed as str')
+
         return self._get_request(
                 '/marketdata/v1/instruments/{}'.format(cusip), {})
